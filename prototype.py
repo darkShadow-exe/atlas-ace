@@ -1,16 +1,26 @@
 import tkinter as tk
-from tkinter import simpledialog, messagebox
+from tkinter import simpledialog, messagebox, filedialog
 from PIL import Image, ImageTk
+import json
+import sys
 
 class MapApp:
-    def __init__(self, root):
+    def __init__(self, root, map_file=None):
         self.root = root
         self.root.title("CBSE/ICSE Map Practice")
 
         # Load map image
-        self.map_img = Image.open("image.png")
+        if map_file:
+            with open(map_file, 'r') as f:
+                data = json.load(f)
+            img_path = data.get('image', 'image.png')
+            self.points = data.get('points', [])
+        else:
+            img_path = "image.png"
+            self.points = []
+        self.map_img = Image.open(img_path)
 
-        # Resize image to reasonable default size for display (max width or height 600)
+        # Resize image to reasonable default size for display 
         max_size = 600
         original_width, original_height = self.map_img.size
         scale = min(max_size / original_width, max_size / original_height, 1)  # scale down only if larger than max_size
@@ -24,9 +34,12 @@ class MapApp:
         self.canvas.pack()
         self.canvas.create_image(0, 0, image=self.tk_img, anchor=tk.NW)
 
-        self.points = [] 
         self.exercise_mode = False
         self.current_index = 0
+
+        # Draw loaded points 
+        for pt in self.points:
+            self.canvas.create_oval(pt["x"]-4, pt["y"]-4, pt["x"]+4, pt["y"]+4, fill="blue")
 
         # Bind click to canvas
         self.canvas.bind("<Button-1>", self.on_click)
@@ -37,6 +50,8 @@ class MapApp:
 
         tk.Button(btn_frame, text="Start Exercise", command=self.start_exercise).pack(side=tk.LEFT)
         tk.Button(btn_frame, text="Reset", command=self.reset_app).pack(side=tk.LEFT)
+        tk.Button(btn_frame, text="Save Map", command=self.save_map).pack(side=tk.LEFT)
+        tk.Button(btn_frame, text="Load Map", command=self.load_map).pack(side=tk.LEFT)
 
     def on_click(self, event):
         if not self.exercise_mode:
@@ -71,15 +86,42 @@ class MapApp:
         self.current_index = 0
         messagebox.showinfo("Start", "Click each red dot and answer.")
 
-    def reset_app(self):
-        self.points = []
+    def save_map(self):
+        if not self.points:
+            messagebox.showwarning("No Points", "Add points before saving.")
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")])
+        if file_path:
+            data = {
+                "image": "image.png",  
+                "points": self.points
+            }
+            with open(file_path, 'w') as f:
+                json.dump(data, f)
+            messagebox.showinfo("Saved", f"Map saved to {file_path}")
+
+    def load_map(self):
+        file_path = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")])
+        if file_path:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            self.points = data.get('points', [])
+            self.reset_app(draw_points=True)
+
+    def reset_app(self, draw_points=False):
         self.exercise_mode = False
         self.current_index = 0
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self.tk_img, anchor=tk.NW)
+        if draw_points:
+            for pt in self.points:
+                self.canvas.create_oval(pt["x"]-4, pt["y"]-4, pt["x"]+4, pt["y"]+4, fill="blue")
+        else:
+            self.points = []
 
 # Run the app
 if __name__ == "__main__":
     root = tk.Tk()
-    app = MapApp(root)
+    map_file = sys.argv[1] if len(sys.argv) > 1 else None
+    app = MapApp(root, map_file=map_file)
     root.mainloop()
