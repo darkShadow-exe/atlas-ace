@@ -9,9 +9,18 @@ class MapApp:
 
         # Load map image
         self.map_img = Image.open("image.png")
+
+        # Resize image to reasonable default size for display (max width or height 600)
+        max_size = 600
+        original_width, original_height = self.map_img.size
+        scale = min(max_size / original_width, max_size / original_height, 1)  # scale down only if larger than max_size
+        new_width = int(original_width * scale)
+        new_height = int(original_height * scale)
+        self.map_img = self.map_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
         self.tk_img = ImageTk.PhotoImage(self.map_img)
 
-        self.canvas = tk.Canvas(root, width=self.tk_img.width(), height=self.tk_img.height())
+        self.canvas = tk.Canvas(root, width=new_width, height=new_height)
         self.canvas.pack()
         self.canvas.create_image(0, 0, image=self.tk_img, anchor=tk.NW)
 
