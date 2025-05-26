@@ -8,6 +8,8 @@ class MapApp:
     def __init__(self, root, map_file=None):
         self.root = root
         self.root.title("CBSE/ICSE Map Practice")
+        self.last_score = None
+        self.map_file = map_file
 
         # Load map image
         if map_file:
@@ -15,6 +17,7 @@ class MapApp:
                 data = json.load(f)
             img_path = data.get('image', 'image.png')
             self.points = data.get('points', [])
+            self.last_score = data.get('last_score')
         else:
             img_path = "image.png"
             self.points = []
@@ -71,12 +74,31 @@ class MapApp:
             answer = simpledialog.askstring("Guess the Place", f"What is the name of this location?")
             if answer and answer.strip().lower() == point["name"].lower():
                 messagebox.showinfo("Correct", "Correct!")
+                if not hasattr(self, 'score'):
+                    self.score = 0
+                self.score += 1
             else:
                 messagebox.showerror("Incorrect", f"Incorrect.\nCorrect answer: {point['name']}")
 
             self.current_index += 1
             if self.current_index >= len(self.points):
-                messagebox.showinfo("Done", "You've finished the exercise!")
+                total = len(self.points)
+                score = getattr(self, 'score', 0)
+                messagebox.showinfo("Done", f"You've finished the exercise!\nScore: {score}/{total}")
+                self.last_score = score
+                # Always save last_score to map file if possible
+                if self.map_file:
+                    try:
+                        with open(self.map_file, 'r') as f:
+                            data = json.load(f)
+                        data['last_score'] = score
+                        with open(self.map_file, 'w') as f:
+                            json.dump(data, f)
+                    except Exception:
+                        pass
+                else:
+                    # If not loaded from file, prompt to save
+                    self.save_map()
 
     def start_exercise(self):
         if not self.points:
@@ -84,6 +106,7 @@ class MapApp:
             return
         self.exercise_mode = True
         self.current_index = 0
+        self.score = 0
         messagebox.showinfo("Start", "Click each red dot and answer.")
 
     def save_map(self):
@@ -94,11 +117,13 @@ class MapApp:
         if file_path:
             data = {
                 "image": "image.png",  
-                "points": self.points
+                "points": self.points,
+                "last_score": self.last_score
             }
             with open(file_path, 'w') as f:
                 json.dump(data, f)
             messagebox.showinfo("Saved", f"Map saved to {file_path}")
+            self.map_file = file_path
 
     def load_map(self):
         file_path = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")])
@@ -106,11 +131,14 @@ class MapApp:
             with open(file_path, 'r') as f:
                 data = json.load(f)
             self.points = data.get('points', [])
+            self.last_score = data.get('last_score')
+            self.map_file = file_path
             self.reset_app(draw_points=True)
 
     def reset_app(self, draw_points=False):
         self.exercise_mode = False
         self.current_index = 0
+        self.score = 0
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, image=self.tk_img, anchor=tk.NW)
         if draw_points:

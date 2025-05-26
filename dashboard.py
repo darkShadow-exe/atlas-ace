@@ -28,7 +28,9 @@ class Dashboard:
                         data = json.load(f)
                     img = data.get('image', 'image.png')
                     pts = len(data.get('points', []))
-                    self.listbox.insert(tk.END, f"{file} | {img} | {pts} points")
+                    last_score = data.get('last_score')
+                    score_str = f" | Last Score: {last_score}" if last_score is not None else ""
+                    self.listbox.insert(tk.END, f"{file} | {img} | {pts} points{score_str}")
                     self.maps.append(file)
                 except Exception:
                     continue
