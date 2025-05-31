@@ -3,6 +3,8 @@ from tkinter import simpledialog, messagebox, filedialog, Toplevel, Label, Entry
 from PIL import Image, ImageTk
 import json
 import sys
+import geopandas as gpd
+from shapely.geometry import Point
 
 class MapApp:
     def __init__(self, root, map_file=None):
@@ -10,58 +12,71 @@ class MapApp:
         self.root.title("CBSE/ICSE Map Practice")
         self.last_score = None
         self.map_file = map_file
+        self.exercise_mode = False 
 
-        # Load map image
+        # Load geojson map
+        self.gdf = gpd.read_file("Indian_Map.geojson")
+        self.bounds = self.gdf.total_bounds  # [minx, miny, maxx, maxy]
+        minx, miny, maxx, maxy = self.bounds
+        self.map_width = 800
+        self.map_height = 800
+        self.bg = '#23272e'
+        self.fg = '#e6e6e6'
+        self.btn_bg = '#2d333b'
+        self.btn_fg = '#e6e6e6'
+        self.root.configure(bg=self.bg)
+
+        # Layout: map on left, controls on right
+        main_frame = tk.Frame(root, bg=self.bg)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Add a canvas with scrollbars for the map
+        canvas_frame = tk.Frame(main_frame, bg=self.bg)
+        canvas_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.canvas = tk.Canvas(canvas_frame, width=self.map_width, height=self.map_height, bg=self.bg, highlightbackground=self.bg)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Add scrollbars
+        x_scroll = tk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
+        y_scroll = tk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.canvas.yview)
+        x_scroll.pack(side=tk.BOTTOM, fill=tk.X)
+        y_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.canvas.configure(xscrollcommand=x_scroll.set, yscrollcommand=y_scroll.set, scrollregion=(0, 0, self.map_width, self.map_height))
+        # Enable mousewheel scrolling
+        self.canvas.bind_all('<MouseWheel>', lambda e: self.canvas.yview_scroll(int(-1*(e.delta/120)), 'units'))
+        self.canvas.bind_all('<Shift-MouseWheel>', lambda e: self.canvas.xview_scroll(int(-1*(e.delta/120)), 'units'))
+
+        # Draw polygons
+        for _, row in self.gdf.iterrows():
+            geom = row.geometry
+            if geom.geom_type == 'Polygon':
+                self._draw_polygon(geom)
+            elif geom.geom_type == 'MultiPolygon':
+                for poly in geom.geoms:
+                    self._draw_polygon(poly)
+
+        # Controls on the right
+        control_frame = tk.Frame(main_frame, bg=self.bg)
+        control_frame.pack(side=tk.RIGHT, fill=tk.Y)
+        tk.Button(control_frame, text="Start Exercise", command=self.start_exercise, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
+        tk.Button(control_frame, text="Reset", command=self.reset_app, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
+        tk.Button(control_frame, text="Save Map", command=self.save_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
+        tk.Button(control_frame, text="Load Map", command=self.load_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
+
+        # Load points
         if map_file:
             with open(map_file, 'r') as f:
                 data = json.load(f)
-            img_path = data.get('image', 'image.png')
             self.points = data.get('points', [])
             self.last_score = data.get('last_score')
         else:
-            img_path = "image.png"
             self.points = []
-        self.map_img = Image.open(img_path)
-
-        # Resize image to reasonable default size for display 
-        max_size = 600
-        original_width, original_height = self.map_img.size
-        scale = min(max_size / original_width, max_size / original_height, 1)  # scale down only if larger than max_size
-        new_width = int(original_width * scale)
-        new_height = int(original_height * scale)
-        self.map_img = self.map_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        self.tk_img = ImageTk.PhotoImage(self.map_img)
-
-        # Dark mode colors
-        bg = '#23272e'
-        fg = '#e6e6e6'
-        btn_bg = '#2d333b'
-        btn_fg = '#e6e6e6'
-        self.root.configure(bg=bg)
-        self.canvas = tk.Canvas(root, width=new_width, height=new_height, bg=bg, highlightbackground=bg)
-        self.canvas.pack()
-        self.canvas.create_image(0, 0, image=self.tk_img, anchor=tk.NW)
-
-        self.exercise_mode = False
-        self.current_index = 0
-
-        # Draw loaded points 
+        # Draw loaded points
         for pt in self.points:
-            # Only show 'name' points (blue) at load
             if pt.get("type") == "name":
-                self.canvas.create_oval(pt["x"]-4, pt["y"]-4, pt["x"]+4, pt["y"]+4, fill="blue")
-
+                x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
         # Bind click to canvas
         self.canvas.bind("<Button-1>", self.on_click)
-
-        # Control buttons
-        btn_frame = tk.Frame(root, bg=bg)
-        btn_frame.pack()
-        tk.Button(btn_frame, text="Start Exercise", command=self.start_exercise, bg=btn_bg, fg=btn_fg, activebackground='#444', activeforeground=fg).pack(side=tk.LEFT)
-        tk.Button(btn_frame, text="Reset", command=self.reset_app, bg=btn_bg, fg=btn_fg, activebackground='#444', activeforeground=fg).pack(side=tk.LEFT)
-        tk.Button(btn_frame, text="Save Map", command=self.save_map, bg=btn_bg, fg=btn_fg, activebackground='#444', activeforeground=fg).pack(side=tk.LEFT)
-        tk.Button(btn_frame, text="Load Map", command=self.load_map, bg=btn_bg, fg=btn_fg, activebackground='#444', activeforeground=fg).pack(side=tk.LEFT)
 
     def dark_simpledialog(self, title, prompt):
         dialog = Toplevel(self.root)
@@ -93,7 +108,26 @@ class MapApp:
         box.grab_set()
         self.root.wait_window(box)
 
+    def _draw_polygon(self, poly):
+        coords = [(self.coord_to_canvas(x, y)) for x, y in poly.exterior.coords]
+        flat = [c for xy in coords for c in xy]
+        self.canvas.create_polygon(flat, outline='#888', fill='#333', width=1)
+
+    def coord_to_canvas(self, lon, lat):
+        minx, miny, maxx, maxy = self.bounds
+        x = (lon - minx) / (maxx - minx) * self.map_width
+        y = self.map_height - (lat - miny) / (maxy - miny) * self.map_height
+        return x, y
+
+    def canvas_to_coord(self, x, y):
+        minx, miny, maxx, maxy = self.bounds
+        lon = minx + (x / self.map_width) * (maxx - minx)
+        lat = miny + ((self.map_height - y) / self.map_height) * (maxy - miny)
+        return lon, lat
+
     def on_click(self, event):
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
         if not self.exercise_mode:
             # Select point type
             type_dialog = tk.Toplevel(self.root)
@@ -108,16 +142,19 @@ class MapApp:
             def on_ok():
                 type_dialog.destroy()
                 point_type = point_type_var.get()
+                lon, lat = self.canvas_to_coord(cx, cy)
                 if point_type == "name":
                     name = self.dark_simpledialog("Location Name", "Enter name of this location:")
                     if name:
-                        self.points.append({"x": event.x, "y": event.y, "name": name, "type": "name"})
-                        self.canvas.create_oval(event.x-4, event.y-4, event.x+4, event.y+4, fill="blue")
+                        self.points.append({"lon": lon, "lat": lat, "name": name, "type": "name"})
+                        x, y = self.coord_to_canvas(lon, lat)
+                        self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
                 elif point_type == "find":
                     name = self.dark_simpledialog("Find Place", "Enter the name the user will have to find:")
                     if name:
-                        self.points.append({"x": event.x, "y": event.y, "name": name, "type": "find"})
-                        self.canvas.create_oval(event.x-4, event.y-4, event.x+4, event.y+4, fill="green")
+                        self.points.append({"lon": lon, "lat": lat, "name": name, "type": "find"})
+                        x, y = self.coord_to_canvas(lon, lat)
+                        self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="green")
             tk.Button(type_dialog, text="OK", command=on_ok, bg='#2d333b', fg='#e6e6e6', activebackground='#444', activeforeground='#e6e6e6').pack(pady=10)
             type_dialog.transient(self.root)
             type_dialog.grab_set()
@@ -126,11 +163,12 @@ class MapApp:
             # In exercise mode, check if user clicked near any unanswered 'name' point
             for i, point in enumerate(self.points):
                 if point.get("type") == "name" and not point.get("answered", False):
-                    dx = event.x - point["x"]
-                    dy = event.y - point["y"]
+                    px, py = self.coord_to_canvas(point["lon"], point["lat"])
+                    dx = cx - px
+                    dy = cy - py
                     distance = (dx**2 + dy**2) ** 0.5
                     if distance <= 10:
-                        self.canvas.create_oval(point["x"]-4, point["y"]-4, point["x"]+4, point["y"]+4, fill="red")
+                        self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="red")
                         answer = self.dark_simpledialog("Guess the Place", f"What is the name of this location?")
                         if answer and answer.strip().lower() == point["name"].lower():
                             self.dark_messagebox("Correct", "Correct!", kind='info')
@@ -146,7 +184,7 @@ class MapApp:
                 self._start_find_points()
             else:
                 self.check_exercise_end()
-            
+
     def _at_end_of_name_points(self):
         # Returns True if all name points have been answered or there are no name points
         for pt in self.points:
@@ -172,11 +210,15 @@ class MapApp:
         self.canvas.bind("<Button-1>", self.check_find_point)
 
     def check_find_point(self, event):
+        # Use canvasx/canvasy for correct coordinates
+        cx = self.canvas.canvasx(event.x)
+        cy = self.canvas.canvasy(event.y)
         point = self.current_find_point
-        dx = event.x - point["x"]
-        dy = event.y - point["y"]
+        px, py = self.coord_to_canvas(point["lon"], point["lat"])
+        dx = cx - px
+        dy = cy - py
         distance = (dx**2 + dy**2) ** 0.5
-        self.canvas.create_oval(point["x"]-4, point["y"]-4, point["x"]+4, point["y"]+4, outline="green", width=2)
+        self.canvas.create_oval(px-4, py-4, px+4, py+4, outline="green", width=2)
         if distance <= 20:
             self.dark_messagebox("Correct", "Correct location!", kind='info')
             if not hasattr(self, 'score'):
@@ -225,11 +267,19 @@ class MapApp:
         self.score = 0
         # Redraw only 'name' points
         self.canvas.delete("all")
-        self.canvas.create_image(0, 0, image=self.tk_img, anchor=tk.NW)
+        # Draw polygons
+        for _, row in self.gdf.iterrows():
+            geom = row.geometry
+            if geom.geom_type == 'Polygon':
+                self._draw_polygon(geom)
+            elif geom.geom_type == 'MultiPolygon':
+                for poly in geom.geoms:
+                    self._draw_polygon(poly)
         for pt in self.points:
             if pt.get("type") == "name":
                 pt["answered"] = False
-                self.canvas.create_oval(pt["x"]-4, pt["y"]-4, pt["x"]+4, pt["y"]+4, fill="blue")
+                x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
         self.dark_messagebox("Start", "Click each red dot and answer.", kind='info')
         if self._at_end_of_name_points():
             self._start_find_points()
@@ -241,13 +291,13 @@ class MapApp:
         file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")])
         if file_path:
             data = {
-                "image": "image.png",  
+                "geojson": "Indian_Map.geojson",
                 "points": self.points,
                 "last_score": self.last_score
             }
             with open(file_path, 'w') as f:
                 json.dump(data, f)
-            messagebox.showinfo("Saved", f"Map saved to {file_path}")
+            self.dark_messagebox("Saved", f"Map saved to {file_path}", kind='info')
             self.map_file = file_path
 
     def load_map(self):
@@ -265,12 +315,20 @@ class MapApp:
         self.current_index = 0
         self.score = 0
         self.canvas.delete("all")
-        self.canvas.create_image(0, 0, image=self.tk_img, anchor=tk.NW)
+        # Redraw polygons
+        for _, row in self.gdf.iterrows():
+            geom = row.geometry
+            if geom.geom_type == 'Polygon':
+                self._draw_polygon(geom)
+            elif geom.geom_type == 'MultiPolygon':
+                for poly in geom.geoms:
+                    self._draw_polygon(poly)
         if draw_points:
             for pt in self.points:
                 if pt.get("type") == "name":
                     pt["answered"] = False
-                    self.canvas.create_oval(pt["x"]-4, pt["y"]-4, pt["x"]+4, pt["y"]+4, fill="blue")
+                    x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                    self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
         else:
             self.points = []
 
