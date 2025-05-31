@@ -5,6 +5,8 @@ import json
 import sys
 import geopandas as gpd
 from shapely.geometry import Point
+import subprocess
+from geopy.geocoders import Nominatim
 
 class MapApp:
     def __init__(self, root, map_file=None):
