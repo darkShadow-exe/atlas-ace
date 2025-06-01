@@ -7,6 +7,7 @@ import geopandas as gpd
 from shapely.geometry import Point
 import subprocess
 from geopy.geocoders import Nominatim
+import requests
 
 class MapApp:
     def __init__(self, root, map_file=None):
@@ -63,6 +64,7 @@ class MapApp:
         tk.Button(control_frame, text="Reset", command=self.reset_app, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
         tk.Button(control_frame, text="Save Map", command=self.save_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
         tk.Button(control_frame, text="Load Map", command=self.load_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
+        tk.Button(control_frame, text="AI Exercise (Llama)", command=self.open_llama_custom_dialog, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
 
         # Load points
         if map_file:
@@ -333,6 +335,218 @@ class MapApp:
                     self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
         else:
             self.points = []
+
+    def ask_llama_questions(self, custom_instructions):
+        """
+        Calls llama3 via Ollama to generate map questions, geocodes them, and loads them as points.
+        custom_instructions: dict with keys num_questions, type_ratio, filter_topics, include_history
+        """
+        # Show loading screen
+        loading = Toplevel(self.root)
+        loading.title("Loading")
+        loading.configure(bg=self.bg)
+        Label(loading, text="Generating questions with Llama...\nThis may take a moment.", bg=self.bg, fg=self.fg).pack(padx=30, pady=30)
+        loading.transient(self.root)
+        loading.grab_set()
+        self.root.update()
+
+        prompt = f"""
+You are an educational AI assistant creating a map-based learning dataset for CBSE Class 10. Use the syllabus below to generate question-answer pairs.
+
+Follow these custom instructions:
+- Total questions: {custom_instructions['num_questions']}
+- Ratio of 'find' (map click) to 'name' (user types name): {custom_instructions['type_ratio'][0]} : {custom_instructions['type_ratio'][1]}
+- Topics to include: {'All' if not custom_instructions['filter_topics'] else ', '.join(custom_instructions['filter_topics'])}
+- Include history-related questions: {'Yes' if custom_instructions['include_history'] else 'No'}
+
+---
+
+SYLLABUS  
+{"History – Chapter 2: Nationalism in India (1918–1930)" if custom_instructions['include_history'] else ""}
+{"- Indian National Congress Sessions: Calcutta (Sept 1920), Nagpur (Dec 1920), Madras (1927)" if custom_instructions['include_history'] else ""}
+{"- Centres of the Indian National Movement: Champaran (Bihar), Kheda (Gujarat), Ahmedabad (Gujarat), Amritsar (Punjab), Dandi (Gujarat)" if custom_instructions['include_history'] else ""}
+
+Geography – Chapter 3: Water Resources  
+- Dams: Salal, Bhakra Nangal, Tehri, Rana Pratap Sagar, Sardar Sarovar, Hirakud, Nagarjuna Sagar, Tungabhadra
+
+Geography – Chapter 5: Minerals and Energy Resources  
+- Iron Ore Mines: Mayurbhanj, Durg, Bailadila, Bellary, Kudremukh  
+- Coal Mines: Raniganj, Bokaro, Talcher, Neyveli  
+- Oil Fields: Digboi, Naharkatia, Mumbai High, Bassien, Kalol, Ankleshwar  
+- Power Plants:  
+  - Thermal: Namrup, Singrauli, Ramagundam  
+  - Nuclear: Narora, Kakrapara, Tarapur, Kalpakkam
+
+Geography – Chapter 6: Manufacturing Industries  
+- Cotton Textile: Mumbai, Indore, Surat, Kanpur, Coimbatore  
+- Iron & Steel: Durgapur, Bokaro, Jamshedpur, Bhilai, Vijayanagar, Salem  
+- Software Tech Parks: Noida, Gandhinagar, Mumbai, Pune, Hyderabad, Bengaluru, Chennai, Thiruvananthapuram
+
+Geography – Chapter 7: Lifelines of National Economy  
+- Major Sea Ports: Kandla, Mumbai, Marmagao, New Mangalore, Kochi, Tuticorin, Chennai, Vishakhapatnam, Paradip, Haldia  
+- International Airports: Amritsar, Delhi, Mumbai, Chennai, Kolkata, Hyderabad
+
+---
+
+OUTPUT FORMAT  
+Return a JSON array with each object in this format:
+
+{{
+  "question": "Where is the Bhakra Nangal Dam located?",
+  "answer": "Bhakra Nangal",
+  "place": "Bhakra Nangal, India",
+  "category": "Geography",
+  "chapter": "Water Resources",
+  "topic": "Dams",
+  "type": "name" // or "find"
+}}
+
+Point Type Explanation:  
+- "name" → User sees a location on the map and must type the name.  
+- "find" → User sees the name and must click the location on the map.
+
+Maintain the specified ratio between 'find' and 'name' question types.  
+Use only city/town + state or country in the place field for compatibility with Nominatim.  
+If filter_topics is set, only include questions from those topics.  
+Return only the JSON array.
+"""
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": "llama3",
+                "prompt": prompt,
+                "stream": True
+            }
+        )
+        full_output = ""
+        if response.ok:
+            for line in response.iter_lines():
+                if line:
+                    data = json.loads(line)
+                    if "response" in data:
+                        full_output += data["response"]
+        else:
+            loading.destroy()
+            self.dark_messagebox("Error", f"Llama request failed: {response.status_code}", kind='error')
+            return
+        try:
+            json_start = full_output.find("[")
+            json_end = full_output.rfind("]") + 1
+            parsed_data = json.loads(full_output[json_start:json_end])
+            # Show the raw JSON output in a debug window
+            debug_win = Toplevel(self.root)
+            debug_win.title("Llama JSON Output (Debug)")
+            debug_win.configure(bg=self.bg)
+            text = tk.Text(debug_win, bg=self.bg, fg=self.fg, insertbackground=self.fg, wrap='none', width=120, height=30)
+            text.pack(fill=tk.BOTH, expand=True)
+            text.insert('1.0', json.dumps(parsed_data, indent=2))
+            text.config(state='disabled')
+        except Exception as e:
+            loading.destroy()
+            self.dark_messagebox("Error", f"Error parsing JSON: {str(e)}", kind='error')
+            return
+        geolocator = Nominatim(user_agent="atlas-ace-geocoder")
+        points = []
+        for obj in parsed_data:
+            place = obj.get("place")
+            lon, lat = None, None
+            if place:
+                try:
+                    location = geolocator.geocode(place)
+                    if location:
+                        lon, lat = location.longitude, location.latitude
+                except Exception:
+                    pass
+            if lon is not None and lat is not None:
+                points.append({
+                    "lon": lon,
+                    "lat": lat,
+                    "name": obj.get("answer"),
+                    "type": obj.get("type", "name"),
+                    "question": obj.get("question"),
+                    "category": obj.get("category"),
+                    "chapter": obj.get("chapter"),
+                    "topic": obj.get("topic"),
+                    "place": place
+                })
+        loading.destroy()
+        # Show the processed points in a debug window
+        debug_points = Toplevel(self.root)
+        debug_points.title("Processed Points (Debug)")
+        debug_points.configure(bg=self.bg)
+        text2 = tk.Text(debug_points, bg=self.bg, fg=self.fg, insertbackground=self.fg, wrap='none', width=120, height=30)
+        text2.pack(fill=tk.BOTH, expand=True)
+        text2.insert('1.0', json.dumps(points, indent=2))
+        text2.config(state='disabled')
+        if not points:
+            self.dark_messagebox("No Points", "No valid points generated.", kind='warning')
+            return
+        self.points = points
+        self.exercise_mode = True
+        self.current_index = 0
+        self.score = 0
+        self.canvas.delete("all")
+        for _, row in self.gdf.iterrows():
+            geom = row.geometry
+            if geom.geom_type == 'Polygon':
+                self._draw_polygon(geom)
+            elif geom.geom_type == 'MultiPolygon':
+                for poly in geom.geoms:
+                    self._draw_polygon(poly)
+        for pt in self.points:
+            if pt.get("type") == "name":
+                pt["answered"] = False
+                x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
+        self.dark_messagebox("Start", "Click each blue dot and answer.", kind='info')
+        if self._at_end_of_name_points():
+            self._start_find_points()
+
+    def open_llama_custom_dialog(self):
+        dialog = Toplevel(self.root)
+        dialog.title("AI Exercise Custom Instructions")
+        dialog.configure(bg=self.bg)
+        # Number of questions
+        Label(dialog, text="Number of questions:", bg=self.bg, fg=self.fg).pack(padx=10, pady=2)
+        num_q = Entry(dialog, bg=self.btn_bg, fg=self.fg, insertbackground=self.fg)
+        num_q.insert(0, "10")
+        num_q.pack(padx=10, pady=2)
+        # Ratio
+        Label(dialog, text="Ratio of find:name (e.g. 0.5:0.5):", bg=self.bg, fg=self.fg).pack(padx=10, pady=2)
+        ratio = Entry(dialog, bg=self.btn_bg, fg=self.fg, insertbackground=self.fg)
+        ratio.insert(0, "0.5:0.5")
+        ratio.pack(padx=10, pady=2)
+        # Topics
+        Label(dialog, text="Filter topics (comma separated, blank for all):", bg=self.bg, fg=self.fg).pack(padx=10, pady=2)
+        topics = Entry(dialog, bg=self.btn_bg, fg=self.fg, insertbackground=self.fg)
+        topics.pack(padx=10, pady=2)
+        # History
+        include_hist = tk.IntVar(value=1)
+        tk.Checkbutton(dialog, text="Include history questions", variable=include_hist, bg=self.bg, fg=self.fg, selectcolor='#444').pack(padx=10, pady=2)
+        def on_ok():
+            try:
+                n = int(num_q.get())
+            except Exception:
+                n = 10
+            try:
+                r = [float(x) for x in ratio.get().split(":")]
+                if len(r) != 2 or abs(sum(r)-1) > 0.01:
+                    r = [0.5, 0.5]
+            except Exception:
+                r = [0.5, 0.5]
+            t = [x.strip() for x in topics.get().split(",") if x.strip()]
+            custom = {
+                "num_questions": n,
+                "type_ratio": r,
+                "filter_topics": t,
+                "include_history": bool(include_hist.get())
+            }
+            dialog.destroy()
+            self.ask_llama_questions(custom)
+        Button(dialog, text="OK", command=on_ok, bg=self.btn_bg, fg=self.fg, activebackground='#444', activeforeground=self.fg).pack(pady=10)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        self.root.wait_window(dialog)
 
 # Run the app
 if __name__ == "__main__":
