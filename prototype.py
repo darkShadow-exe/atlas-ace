@@ -355,16 +355,30 @@ You are an educational AI assistant creating a map-based learning dataset for CB
 
 Follow these custom instructions:
 - Total questions: {custom_instructions['num_questions']}
+- Maintain the following ratio (strictly) of question types:
+  - "find" → User sees the place name, must click the correct map location
+  - "name" → User sees a map location, must type the name
 - Ratio of 'find' (map click) to 'name' (user types name): {custom_instructions['type_ratio'][0]} : {custom_instructions['type_ratio'][1]}
 - Topics to include: {'All' if not custom_instructions['filter_topics'] else ', '.join(custom_instructions['filter_topics'])}
 - Include history-related questions: {'Yes' if custom_instructions['include_history'] else 'No'}
 
 ---
 
-SYLLABUS  
-{"History – Chapter 2: Nationalism in India (1918–1930)" if custom_instructions['include_history'] else ""}
-{"- Indian National Congress Sessions: Calcutta (Sept 1920), Nagpur (Dec 1920), Madras (1927)" if custom_instructions['include_history'] else ""}
-{"- Centres of the Indian National Movement: Champaran (Bihar), Kheda (Gujarat), Ahmedabad (Gujarat), Amritsar (Punjab), Dandi (Gujarat)" if custom_instructions['include_history'] else ""}
+📚 CBSE Class 10 Map Work Syllabus:
+
+History – Chapter 2: Nationalism in India (1918–1930)
+
+🔹 Indian National Congress Sessions  
+- Calcutta, West Bengal (Sep 1920)  
+- Nagpur, Maharashtra (Dec 1920)  
+- Madras, Tamil Nadu (1927)
+
+🔹 Important Centres of the Indian National Movement  
+- Champaran, Bihar – Movement of Indigo Planters  
+- Kheda, Gujarat – Peasant Satyagraha  
+- Ahmedabad, Gujarat – Cotton Mill Workers Satyagraha  
+- Amritsar, Punjab – Jallianwala Bagh Incident  
+- Dandi, Gujarat – Starting point of Civil Disobedience Movement
 
 Geography – Chapter 3: Water Resources  
 - Dams: Salal, Bhakra Nangal, Tehri, Rana Pratap Sagar, Sardar Sarovar, Hirakud, Nagarjuna Sagar, Tungabhadra
@@ -378,8 +392,8 @@ Geography – Chapter 5: Minerals and Energy Resources
   - Nuclear: Narora, Kakrapara, Tarapur, Kalpakkam
 
 Geography – Chapter 6: Manufacturing Industries  
-- Cotton Textile: Mumbai, Indore, Surat, Kanpur, Coimbatore  
-- Iron & Steel: Durgapur, Bokaro, Jamshedpur, Bhilai, Vijayanagar, Salem  
+- Cotton Textile Centres: Mumbai, Indore, Surat, Kanpur, Coimbatore  
+- Iron & Steel Plants: Durgapur, Bokaro, Jamshedpur, Bhilai, Vijayanagar, Salem  
 - Software Tech Parks: Noida, Gandhinagar, Mumbai, Pune, Hyderabad, Bengaluru, Chennai, Thiruvananthapuram
 
 Geography – Chapter 7: Lifelines of National Economy  
@@ -388,27 +402,89 @@ Geography – Chapter 7: Lifelines of National Economy
 
 ---
 
-OUTPUT FORMAT  
-Return a JSON array with each object in this format:
+🧠 CBSE-Style Map Question Guidelines:
 
-{{
-  "question": "Where is the Bhakra Nangal Dam located?",
-  "answer": "Bhakra Nangal",
-  "place": "Bhakra Nangal, India",
-  "category": "Geography",
-  "chapter": "Water Resources",
-  "topic": "Dams",
-  "type": "name" // or "find"
-}}
+CBSE map-based questions often fall under these formats:
+1. Locate and label: Given a description or name, students mark the location on a blank map.
+2. Identify: Given a marked point or symbol, students must write the correct name.
+3. Match and mark: Interpret indirect clues from historical or economic events to infer and label locations.
+4. Concept-based twist: Link concepts (like cotton production or Satyagraha) to geographical locations.
 
-Point Type Explanation:  
-- "name" → User sees a location on the map and must type the name.  
-- "find" → User sees the name and must click the location on the map.
+Encourage innovation: include CBSE-style variations like interpreting events or inferring from partial clues (e.g. “identify the site of the 1920 peasant Satyagraha in Gujarat”).
 
-Maintain the specified ratio between 'find' and 'name' question types.  
-Use only city/town + state or country in the place field for compatibility with Nominatim.  
-If filter_topics is set, only include questions from those topics.  
-Return only the JSON array.
+---
+
+🧾 EXAMPLES FROM BOARD PAPERS (Add these in the final JSON too):
+
+[
+  {
+    "question": "Identify the place where the Indian National Congress session was held in 1920.",
+    "answer": "Nagpur",
+    "place": "Nagpur, Maharashtra, India",
+    "subject": "History",
+    "chapter": "Nationalism in India",
+    "topic": "Indian National Congress Sessions",
+    "type": "find"
+  },
+  {
+    "question": "Name the place where Gandhiji started the Dandi March.",
+    "answer": "Dandi",
+    "place": "Dandi, Gujarat, India",
+    "subject": "History",
+    "chapter": "Nationalism in India",
+    "topic": "Important Centres of Indian National Movement",
+    "type": "name"
+  },
+  {
+    "question": "Locate the atomic power plant situated in Gujarat.",
+    "answer": "Kakrapara",
+    "place": "Kakrapar, Gujarat, India",
+    "subject": "Geography",
+    "chapter": "Minerals and Energy Resources",
+    "topic": "Nuclear Power Plants",
+    "type": "find"
+  },
+  {
+    "question": "Identify the sea port located in West Bengal.",
+    "answer": "Haldia",
+    "place": "Haldia, West Bengal, India",
+    "subject": "Geography",
+    "chapter": "Lifelines of National Economy",
+    "topic": "Major Sea Ports",
+    "type": "find"
+  },
+  {
+    "question": "Name the software technology park located in Uttar Pradesh.",
+    "answer": "Noida",
+    "place": "Noida, Uttar Pradesh, India",
+    "subject": "Geography",
+    "chapter": "Manufacturing Industries",
+    "topic": "Software Tech Parks",
+    "type": "name"
+  }
+]
+
+---
+
+🔁 OUTPUT FORMAT  
+Return a JSON array where each object follows this structure:
+
+{
+  "question": "your generated question here",
+  "answer": "correct answer (place name)",
+  "place": "city/town, state, country",
+  "subject": "Geography" or "History",
+  "chapter": "chapter name",
+  "topic": "topic name",
+  "type": "name" or "find"
+}
+
+⚠️ NOTES:
+- Keep "place" field compatible with Nominatim geocoding (i.e., "City, State, India").
+- Stick to the topic filter (if provided).
+- Maintain the 'find' : 'name' ratio strictly.
+- Invent new CBSE-style questions using subtle references, indirect clues, or conceptual links.
+- DO NOT include any explanation or extra text — ONLY the JSON array.
 """
         response = requests.post(
             "http://localhost:11434/api/generate",
