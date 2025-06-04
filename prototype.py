@@ -61,6 +61,8 @@ class MapApp:
         control_frame = tk.Frame(main_frame, bg=self.bg)
         control_frame.pack(side=tk.RIGHT, fill=tk.Y)
         tk.Button(control_frame, text="Start Exercise", command=self.start_exercise, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
+        self.stop_btn = tk.Button(control_frame, text="Stop Exercise", command=self.stop_exercise, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg, state='disabled')
+        self.stop_btn.pack(pady=10, padx=10, anchor='n')
         tk.Button(control_frame, text="Reset", command=self.reset_app, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
         tk.Button(control_frame, text="Save Map", command=self.save_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
         tk.Button(control_frame, text="Load Map", command=self.load_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
@@ -173,7 +175,8 @@ class MapApp:
                     distance = (dx**2 + dy**2) ** 0.5
                     if distance <= 10:
                         self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="red")
-                        answer = self.dark_simpledialog("Guess the Place", f"What is the name of this location?")
+                        prompt = point.get("question") or "What is the name of this location?"
+                        answer = self.dark_simpledialog("Guess the Place", prompt)
                         if answer and answer.strip().lower() == point["name"].lower():
                             self.dark_messagebox("Correct", "Correct!", kind='info')
                             if not hasattr(self, 'score'):
@@ -208,7 +211,8 @@ class MapApp:
         self.check_exercise_end()
 
     def ask_find_point(self, point):
-        self.dark_messagebox("Find Place", f"Click the location for: {point['name']}")
+        prompt = point.get("question") or f"Click the location for: {point['name']}"
+        self.dark_messagebox("Find Place", prompt)
         self.canvas.unbind("<Button-1>")
         self.current_find_point = point
         self.canvas.bind("<Button-1>", self.check_find_point)
@@ -250,6 +254,8 @@ class MapApp:
             self.dark_messagebox("Done", f"You've finished the exercise!\nScore: {score}/{total}", kind='info')
             self.last_score = score
             self.exercise_mode = False  
+            if hasattr(self, 'stop_btn'):
+                self.stop_btn.config(state='disabled')
             if self.map_file:
                 try:
                     with open(self.map_file, 'r') as f:
@@ -261,6 +267,9 @@ class MapApp:
                     pass
             else:
                 self.save_map()
+            # Re-enable point addition after exercise
+            self.canvas.unbind("<Button-1>")
+            self.canvas.bind("<Button-1>", self.on_click)
 
     def start_exercise(self):
         if not self.points:
@@ -269,6 +278,8 @@ class MapApp:
         self.exercise_mode = True
         self.current_index = 0
         self.score = 0
+        if hasattr(self, 'stop_btn'):
+            self.stop_btn.config(state='normal')
         # Redraw only 'name' points
         self.canvas.delete("all")
         # Draw polygons
@@ -284,9 +295,87 @@ class MapApp:
                 pt["answered"] = False
                 x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
                 self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
-        self.dark_messagebox("Start", "Click each red dot and answer.", kind='info')
+        # Do NOT draw find points here in manual mode
+        self.dark_messagebox("Start", "Click each blue dot and answer.", kind='info')
         if self._at_end_of_name_points():
             self._start_find_points()
+        # Wait for user to answer all 'name' points before moving on
+        def exercise_click(event):
+            cx = self.canvas.canvasx(event.x)
+            cy = self.canvas.canvasy(event.y)
+            for i, point in enumerate(self.points):
+                if point.get("type") == "name" and not point.get("answered", False):
+                    px, py = self.coord_to_canvas(point["lon"], point["lat"])
+                    dx = cx - px
+                    dy = cy - py
+                    distance = (dx**2 + dy**2) ** 0.5
+                    if distance <= 10:
+                        self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="red")
+                        prompt = point.get("question") or "What is the name of this location?"
+                        answer = self.dark_simpledialog("Guess the Place", prompt)
+                        if answer and answer.strip().lower() == point["name"].lower():
+                            self.dark_messagebox("Correct", "Correct!", kind='info')
+                            if not hasattr(self, 'score'):
+                                self.score = 0
+                            self.score += 1
+                        else:
+                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {point['name']}", kind='error')
+                        point["answered"] = True
+                        break
+            if self._at_end_of_name_points():
+                self.canvas.unbind("<Button-1>")
+                self._start_find_points()
+        self.canvas.unbind("<Button-1>")
+        self.canvas.bind("<Button-1>", exercise_click)
+
+    def start_ai_exercise(self):
+        self.exercise_mode = True
+        self.current_index = 0
+        self.score = 0
+        if hasattr(self, 'stop_btn'):
+            self.stop_btn.config(state='normal')
+        self.canvas.delete("all")
+        for _, row in self.gdf.iterrows():
+            geom = row.geometry
+            if geom.geom_type == 'Polygon':
+                self._draw_polygon(geom)
+            elif geom.geom_type == 'MultiPolygon':
+                for poly in geom.geoms:
+                    self._draw_polygon(poly)
+        for pt in self.points:
+            if pt.get("type") == "name":
+                pt["answered"] = False
+                x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
+            elif pt.get("type") == "find":
+                x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="green")
+        self.dark_messagebox("Start", "Click each blue dot and answer.", kind='info')
+        if self._at_end_of_name_points():
+            self._start_find_points()
+
+    def stop_exercise(self):
+        self.exercise_mode = False
+        if hasattr(self, 'stop_btn'):
+            self.stop_btn.config(state='disabled')
+        self.canvas.unbind("<Button-1>")
+        self.canvas.delete("all")
+        # Redraw polygons and all points
+        for _, row in self.gdf.iterrows():
+            geom = row.geometry
+            if geom.geom_type == 'Polygon':
+                self._draw_polygon(geom)
+            elif geom.geom_type == 'MultiPolygon':
+                for poly in geom.geoms:
+                    self._draw_polygon(poly)
+        for pt in self.points:
+            if pt.get("type") == "name":
+                x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
+            elif pt.get("type") == "find":
+                x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="green")
+        self.canvas.bind("<Button-1>", self.on_click)
 
     def save_map(self):
         if not self.points:
@@ -414,10 +503,22 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
 
 ---
 
-🧾 EXAMPLES FROM BOARD PAPERS (Add these in the final JSON too):
+🚫 Questions to Avoid:
+
+The following types of questions are NOT aligned with CBSE's map-based question style and must be avoided:
+- Do NOT ask **“In which state/city is ___ located?”** – CBSE does not test geographic containment knowledge. It tests **location identification**, not factual recall about geography.
+- Do NOT ask **descriptive or open-ended questions** – CBSE questions are objective and based on map labeling or identification only.
+- Do NOT ask **“What is the significance of ___?”** – Avoid conceptual theory or explanation-based questions.
+- Do NOT ask for **year or historical date recall**, unless it’s explicitly tied to a map-based event for identification (e.g., “session held in 1920”).
+
+Stay strictly within the expected formats: "find" and "name", using direct or clue-based map references only.
+
+---
+
+🧾 EXAMPLES FROM BOARD PAPERS:
 
 [
-  {
+  {{
     "question": "Identify the place where the Indian National Congress session was held in 1920.",
     "answer": "Nagpur",
     "place": "Nagpur, Maharashtra, India",
@@ -425,8 +526,8 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
     "chapter": "Nationalism in India",
     "topic": "Indian National Congress Sessions",
     "type": "find"
-  },
-  {
+  }},
+  {{
     "question": "Name the place where Gandhiji started the Dandi March.",
     "answer": "Dandi",
     "place": "Dandi, Gujarat, India",
@@ -434,8 +535,8 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
     "chapter": "Nationalism in India",
     "topic": "Important Centres of Indian National Movement",
     "type": "name"
-  },
-  {
+  }},
+  {{
     "question": "Locate the atomic power plant situated in Gujarat.",
     "answer": "Kakrapara",
     "place": "Kakrapar, Gujarat, India",
@@ -443,8 +544,8 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
     "chapter": "Minerals and Energy Resources",
     "topic": "Nuclear Power Plants",
     "type": "find"
-  },
-  {
+  }},
+  {{
     "question": "Identify the sea port located in West Bengal.",
     "answer": "Haldia",
     "place": "Haldia, West Bengal, India",
@@ -452,8 +553,8 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
     "chapter": "Lifelines of National Economy",
     "topic": "Major Sea Ports",
     "type": "find"
-  },
-  {
+  }},
+  {{
     "question": "Name the software technology park located in Uttar Pradesh.",
     "answer": "Noida",
     "place": "Noida, Uttar Pradesh, India",
@@ -461,7 +562,7 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
     "chapter": "Manufacturing Industries",
     "topic": "Software Tech Parks",
     "type": "name"
-  }
+  }}
 ]
 
 ---
@@ -469,7 +570,7 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
 🔁 OUTPUT FORMAT  
 Return a JSON array where each object follows this structure:
 
-{
+{{
   "question": "your generated question here",
   "answer": "correct answer (place name)",
   "place": "city/town, state, country",
@@ -477,13 +578,14 @@ Return a JSON array where each object follows this structure:
   "chapter": "chapter name",
   "topic": "topic name",
   "type": "name" or "find"
-}
+}}
 
 ⚠️ NOTES:
 - Keep "place" field compatible with Nominatim geocoding (i.e., "City, State, India").
 - Stick to the topic filter (if provided).
 - Maintain the 'find' : 'name' ratio strictly.
 - Invent new CBSE-style questions using subtle references, indirect clues, or conceptual links.
+- Stick STRICTLY to the syllabus provided
 - DO NOT include any explanation or extra text — ONLY the JSON array.
 """
         response = requests.post(
@@ -535,15 +637,15 @@ Return a JSON array where each object follows this structure:
                     pass
             if lon is not None and lat is not None:
                 points.append({
+                    "question": obj.get("question"),
+                    "answer": obj.get("answer"),
+                    "place": obj.get("place"),
                     "lon": lon,
                     "lat": lat,
-                    "name": obj.get("answer"),
-                    "type": obj.get("type", "name"),
-                    "question": obj.get("question"),
-                    "category": obj.get("category"),
+                    "subject": obj.get("subject"),
                     "chapter": obj.get("chapter"),
                     "topic": obj.get("topic"),
-                    "place": place
+                    "type": obj.get("type", "name")
                 })
         loading.destroy()
         # Show the processed points in a debug window
@@ -577,6 +679,35 @@ Return a JSON array where each object follows this structure:
         self.dark_messagebox("Start", "Click each blue dot and answer.", kind='info')
         if self._at_end_of_name_points():
             self._start_find_points()
+        # Wait for user to answer all 'name' points before moving on
+        # (fix: always show feedback and wait for user before next point)
+        def exercise_click(event):
+            cx = self.canvas.canvasx(event.x)
+            cy = self.canvas.canvasy(event.y)
+            for i, point in enumerate(self.points):
+                if point.get("type") == "name" and not point.get("answered", False):
+                    px, py = self.coord_to_canvas(point["lon"], point["lat"])
+                    dx = cx - px
+                    dy = cy - py
+                    distance = (dx**2 + dy**2) ** 0.5
+                    if distance <= 10:
+                        self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="red")
+                        prompt = point.get("question") or "What is the name of this location?"
+                        answer = self.dark_simpledialog("Guess the Place", prompt)
+                        if answer and answer.strip().lower() == point["name"].lower():
+                            self.dark_messagebox("Correct", "Correct!", kind='info')
+                            if not hasattr(self, 'score'):
+                                self.score = 0
+                            self.score += 1
+                        else:
+                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {point['name']}", kind='error')
+                        point["answered"] = True
+                        break
+            if self._at_end_of_name_points():
+                self.canvas.unbind("<Button-1>")
+                self._start_find_points()
+        self.canvas.unbind("<Button-1>")
+        self.canvas.bind("<Button-1>", exercise_click)
 
     def open_llama_custom_dialog(self):
         dialog = Toplevel(self.root)
