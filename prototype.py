@@ -67,6 +67,7 @@ class MapApp:
         tk.Button(control_frame, text="Save Map", command=self.save_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
         tk.Button(control_frame, text="Load Map", command=self.load_map, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
         tk.Button(control_frame, text="AI Exercise (Llama)", command=self.open_llama_custom_dialog, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
+        tk.Button(control_frame, text="Add Point", command=self.open_add_point_dialog, bg=self.btn_bg, fg=self.btn_fg, activebackground='#444', activeforeground=self.fg).pack(pady=10, padx=10, anchor='n')
 
         # Load points
         if map_file:
@@ -82,7 +83,8 @@ class MapApp:
                 x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
                 self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
         # Bind click to canvas
-        self.canvas.bind("<Button-1>", self.on_click)
+        # Remove canvas click-to-add-point
+        self.canvas.unbind("<Button-1>")
 
     def dark_simpledialog(self, title, prompt):
         dialog = Toplevel(self.root)
@@ -177,13 +179,14 @@ class MapApp:
                         self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="red")
                         prompt = point.get("question") or "What is the name of this location?"
                         answer = self.dark_simpledialog("Guess the Place", prompt)
-                        if answer and answer.strip().lower() == point["name"].lower():
+                        correct = point.get("answer") or point.get("name")
+                        if answer and correct and answer.strip().lower() == correct.lower():
                             self.dark_messagebox("Correct", "Correct!", kind='info')
                             if not hasattr(self, 'score'):
                                 self.score = 0
                             self.score += 1
                         else:
-                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {point['name']}", kind='error')
+                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {correct}", kind='error')
                         point["answered"] = True
                         break
             # After last name point, auto-start find points if any
@@ -244,7 +247,6 @@ class MapApp:
         # No more find points
         self.current_index = len(self.points)
         self.canvas.unbind("<Button-1>")
-        self.canvas.bind("<Button-1>", self.on_click)
         self.check_exercise_end()
 
     def check_exercise_end(self):
@@ -269,7 +271,8 @@ class MapApp:
                 self.save_map()
             # Re-enable point addition after exercise
             self.canvas.unbind("<Button-1>")
-            self.canvas.bind("<Button-1>", self.on_click)
+            # Ensure no click-to-add-point handler is bound
+            self.canvas.unbind("<Button-1>")
 
     def start_exercise(self):
         if not self.points:
@@ -295,7 +298,8 @@ class MapApp:
                 pt["answered"] = False
                 x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
                 self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
-        # Do NOT draw find points here in manual mode
+        # Ensure no click-to-add-point handler is bound
+        self.canvas.unbind("<Button-1>")
         self.dark_messagebox("Start", "Click each blue dot and answer.", kind='info')
         if self._at_end_of_name_points():
             self._start_find_points()
@@ -313,13 +317,14 @@ class MapApp:
                         self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="red")
                         prompt = point.get("question") or "What is the name of this location?"
                         answer = self.dark_simpledialog("Guess the Place", prompt)
-                        if answer and answer.strip().lower() == point["name"].lower():
+                        correct = point.get("answer") or point.get("name")
+                        if answer and correct and answer.strip().lower() == correct.strip().lower():
                             self.dark_messagebox("Correct", "Correct!", kind='info')
                             if not hasattr(self, 'score'):
                                 self.score = 0
                             self.score += 1
                         else:
-                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {point['name']}", kind='error')
+                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {correct}", kind='error')
                         point["answered"] = True
                         break
             if self._at_end_of_name_points():
@@ -375,7 +380,7 @@ class MapApp:
             elif pt.get("type") == "find":
                 x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
                 self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="green")
-        self.canvas.bind("<Button-1>", self.on_click)
+        # Do not rebind any click handler here
 
     def save_map(self):
         if not self.points:
@@ -422,8 +427,12 @@ class MapApp:
                     pt["answered"] = False
                     x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
                     self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="blue")
+                elif pt.get("type") == "find":
+                    x, y = self.coord_to_canvas(pt["lon"], pt["lat"])
+                    self.canvas.create_oval(x-4, y-4, x+4, y+4, fill="green")
         else:
             self.points = []
+        # Do not rebind any click handler here
 
     def ask_llama_questions(self, custom_instructions):
         """
@@ -694,13 +703,14 @@ Return a JSON array where each object follows this structure:
                         self.canvas.create_oval(px-4, py-4, px+4, py+4, fill="red")
                         prompt = point.get("question") or "What is the name of this location?"
                         answer = self.dark_simpledialog("Guess the Place", prompt)
-                        if answer and answer.strip().lower() == point["name"].lower():
+                        correct = point.get("answer") or point.get("name")
+                        if answer and correct and answer.strip().lower() == correct.strip().lower():
                             self.dark_messagebox("Correct", "Correct!", kind='info')
                             if not hasattr(self, 'score'):
                                 self.score = 0
                             self.score += 1
                         else:
-                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {point['name']}", kind='error')
+                            self.dark_messagebox("Incorrect", f"Incorrect.\nCorrect answer: {correct}", kind='error')
                         point["answered"] = True
                         break
             if self._at_end_of_name_points():
@@ -751,6 +761,57 @@ Return a JSON array where each object follows this structure:
             dialog.destroy()
             self.ask_llama_questions(custom)
         Button(dialog, text="OK", command=on_ok, bg=self.btn_bg, fg=self.fg, activebackground='#444', activeforeground=self.fg).pack(pady=10)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+
+    def open_add_point_dialog(self):
+        dialog = Toplevel(self.root)
+        dialog.title("Add Point")
+        dialog.configure(bg=self.bg)
+        entries = {}
+        fields = [
+            ("question", "Question (optional)"),
+            ("answer", "Answer (place name)"),
+            ("place", "Place (city, state, country)"),
+            ("lon", "Longitude (decimal)"),
+            ("lat", "Latitude (decimal)"),
+            ("subject", "Subject (Geography/History)"),
+            ("chapter", "Chapter"),
+            ("topic", "Topic"),
+            ("type", "Type (name/find)")
+        ]
+        for key, label in fields:
+            Label(dialog, text=label+":", bg=self.bg, fg=self.fg).pack(padx=10, pady=2, anchor='w')
+            entry = Entry(dialog, bg=self.btn_bg, fg=self.fg, insertbackground=self.fg)
+            entry.pack(padx=10, pady=2, fill='x')
+            entries[key] = entry
+        def on_ok():
+            try:
+                lon = float(entries["lon"].get())
+                lat = float(entries["lat"].get())
+            except Exception:
+                self.dark_messagebox("Error", "Longitude and Latitude must be numbers.", kind='error')
+                return
+            minx, miny, maxx, maxy = self.bounds
+            if not (minx <= lon <= maxx and miny <= lat <= maxy):
+                self.dark_messagebox("Error", "Coordinates are outside the map bounds.", kind='error')
+                return
+            pt = {k: entries[k].get() for k in entries}
+            pt["lon"] = lon
+            pt["lat"] = lat
+            if pt["type"] not in ("name", "find"):
+                self.dark_messagebox("Error", "Type must be 'name' or 'find'", kind='error')
+                return
+            self.points.append(pt)
+            x, y = self.coord_to_canvas(lon, lat)
+            color = "blue" if pt["type"] == "name" else "green"
+            self.canvas.create_oval(x-4, y-4, x+4, y+4, fill=color)
+            # Scroll to center the new point
+            self.canvas.xview_moveto(max(0, (x - self.map_width//2) / self.map_width))
+            self.canvas.yview_moveto(max(0, (y - self.map_height//2) / self.map_height))
+            dialog.destroy()
+        Button(dialog, text="Add", command=on_ok, bg=self.btn_bg, fg=self.fg, activebackground='#444', activeforeground=self.fg).pack(pady=10)
         dialog.transient(self.root)
         dialog.grab_set()
         self.root.wait_window(dialog)
