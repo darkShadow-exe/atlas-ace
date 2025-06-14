@@ -517,8 +517,12 @@ Encourage innovation: include CBSE-style variations like interpreting events or 
 The following types of questions are NOT aligned with CBSE's map-based question style and must be avoided:
 - Do NOT ask **“In which state/city is ___ located?”** – CBSE does not test geographic containment knowledge. It tests **location identification**, not factual recall about geography.
 - Do NOT ask **descriptive or open-ended questions** – CBSE questions are objective and based on map labeling or identification only.
-- Do NOT ask **“What is the significance of ___?”** – Avoid conceptual theory or explanation-based questions.
+- Do NOT ask **“What is the significance of ___?”** – Avoid conceptual theory or explanation-based questions You are free to ask questions that relate to a point on the map (e.g., “identify the site of the 1920 peasant Satyagraha in Gujarat”). Such questions test theoretical as well as map pointing skills.
 - Do NOT ask for **year or historical date recall**, unless it’s explicitly tied to a map-based event for identification (e.g., “session held in 1920”).
+- Do NOT ask for **names of people or leaders** unless they are directly associated with a specific location on the map (e.g., “identify the place where Gandhiji started the Dandi March”).
+- Do NOT ask for **general knowledge or trivia** unrelated to map locations (e.g., “who was the first President of India?”).
+- Do NOT ask for **current events or recent history** that are not part of the syllabus.
+- Do NOT ask vague questions like: "Find the city where the Thermal Power Plant is located." – This is too broad as there are many thermal power plants in India. Instead, ask for specific plants or locations by mentioning the state they are in (e.g., "Identify the thermal power plant located in Singrauli").
 
 Stay strictly within the expected formats: "find" and "name", using direct or clue-based map references only.
 
