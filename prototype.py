@@ -180,7 +180,13 @@ class MapApp:
                         prompt = point.get("question") or "What is the name of this location?"
                         answer = self.dark_simpledialog("Guess the Place", prompt)
                         correct = point.get("answer") or point.get("name")
-                        if answer and correct and answer.strip().lower() == correct.lower():
+                        is_correct = answer and correct and answer.strip().lower() == correct.lower()
+                        # Save user answer in AI JSON format
+                        user_point = dict(point)
+                        user_point["user_answer"] = answer
+                        user_point["is_correct"] = bool(is_correct)
+                        self.user_answers.append(user_point)
+                        if is_correct:
                             self.dark_messagebox("Correct", "Correct!", kind='info')
                             if not hasattr(self, 'score'):
                                 self.score = 0
@@ -230,7 +236,13 @@ class MapApp:
         dy = cy - py
         distance = (dx**2 + dy**2) ** 0.5
         self.canvas.create_oval(px-4, py-4, px+4, py+4, outline="green", width=2)
-        if distance <= 20:
+        is_correct = distance <= 20
+        # Save user answer for find points
+        user_point = dict(point)
+        user_point["user_answer"] = f"Clicked at ({cx:.4f}, {cy:.4f})"
+        user_point["is_correct"] = is_correct
+        self.user_answers.append(user_point)
+        if is_correct:
             self.dark_messagebox("Correct", "Correct location!", kind='info')
             if not hasattr(self, 'score'):
                 self.score = 0
@@ -273,6 +285,22 @@ class MapApp:
             self.canvas.unbind("<Button-1>")
             # Ensure no click-to-add-point handler is bound
             self.canvas.unbind("<Button-1>")
+            # After exercise, send user_answers to Llama for feedback
+            try:
+                feedback_prompt = self._build_feedback_prompt(self.user_answers)
+                api_url = "http://localhost:8000/llama"  # Or your HF Space endpoint
+                payload = {
+                    "prompt": feedback_prompt,
+                    "max_tokens": 512,
+                    "temperature": 0.2,
+                    "top_p": 0.95
+                }
+                resp = requests.post(api_url, json=payload, timeout=60)
+                resp.raise_for_status()
+                feedback = resp.json().get("result", "No feedback received.")
+                self.dark_messagebox("Personalized Feedback", feedback, kind='info')
+            except Exception as e:
+                self.dark_messagebox("Feedback Error", f"Could not get feedback from Llama.\n{e}", kind='error')
 
     def start_exercise(self):
         if not self.points:
@@ -318,7 +346,13 @@ class MapApp:
                         prompt = point.get("question") or "What is the name of this location?"
                         answer = self.dark_simpledialog("Guess the Place", prompt)
                         correct = point.get("answer") or point.get("name")
-                        if answer and correct and answer.strip().lower() == correct.strip().lower():
+                        is_correct = answer and correct and answer.strip().lower() == correct.strip().lower()
+                        # Save user answer in AI JSON format
+                        user_point = dict(point)
+                        user_point["user_answer"] = answer
+                        user_point["is_correct"] = bool(is_correct)
+                        self.user_answers.append(user_point)
+                        if is_correct:
                             self.dark_messagebox("Correct", "Correct!", kind='info')
                             if not hasattr(self, 'score'):
                                 self.score = 0
@@ -522,7 +556,9 @@ The following types of questions are NOT aligned with CBSE's map-based question 
 - Do NOT ask for **names of people or leaders** unless they are directly associated with a specific location on the map (e.g., “identify the place where Gandhiji started the Dandi March”).
 - Do NOT ask for **general knowledge or trivia** unrelated to map locations (e.g., “who was the first President of India?”).
 - Do NOT ask for **current events or recent history** that are not part of the syllabus.
-- Do NOT ask vague questions like: "Find the city where the Thermal Power Plant is located." – This is too broad as there are many thermal power plants in India. Instead, ask for specific plants or locations by mentioning the state they are in (e.g., "Identify the thermal power plant located in Singrauli").
+- Do NOT ask vague questions (for find points; this is ok for name points) like: "Find the city where the Thermal Power Plant is located." OR "Find the place where a nuclear power plant is situated." – This is too broad as there are many thermal/nuclear power plants in India and without any specific clues, it is difficult to identify the exact location. Instead, ask for specific plants or locations by mentioning the state they are in (e.g., "Identify the thermal power plant located in Madhya Pradesh").
+- Do NOT include the answer/place name in the question itself. The question should be a clue or reference that leads to the answer. Instead, use clear references to locations or events that can be identified on a map like states or cities. If the question is about a specific event, mention the event, its details and use different clues without giving away the answer directly. If two places like 2 cotton textile centres or 2 nuclear power plants are mentioned, ask about one of them specifically using other geographical or contextual clues.
+- Do NOT use ambiguous terms like "find" or "name" in the question. Instead, use clear references to locations or events that can be identified on a map.
 
 Stay strictly within the expected formats: "find" and "name", using direct or clue-based map references only.
 
@@ -599,6 +635,9 @@ Return a JSON array where each object follows this structure:
 - Maintain the 'find' : 'name' ratio strictly.
 - Invent new CBSE-style questions using subtle references, indirect clues, or conceptual links.
 - Stick STRICTLY to the syllabus provided
+- Do NOT include any other text or explanations in the output.
+- Ensure the output is a valid JSON array with no extra characters or formatting.
+- DO NOT stick to the examples provided, but use them as a guide for style and format.
 - DO NOT include any explanation or extra text — ONLY the JSON array.
 """
         response = requests.post(
@@ -708,7 +747,13 @@ Return a JSON array where each object follows this structure:
                         prompt = point.get("question") or "What is the name of this location?"
                         answer = self.dark_simpledialog("Guess the Place", prompt)
                         correct = point.get("answer") or point.get("name")
-                        if answer and correct and answer.strip().lower() == correct.strip().lower():
+                        is_correct = answer and correct and answer.strip().lower() == correct.strip().lower()
+                        # Save user answer in AI JSON format
+                        user_point = dict(point)
+                        user_point["user_answer"] = answer
+                        user_point["is_correct"] = bool(is_correct)
+                        self.user_answers.append(user_point)
+                        if is_correct:
                             self.dark_messagebox("Correct", "Correct!", kind='info')
                             if not hasattr(self, 'score'):
                                 self.score = 0
